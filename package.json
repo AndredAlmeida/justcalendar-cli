@@ -1,0 +1,26 @@
+{
+  "name": "justcalendar-cli",
+  "version": "0.1.0",
+  "description": "CLI for managing Just Calendar data on Google Drive",
+  "type": "module",
+  "bin": {
+    "justcalendar": "./bin/justcalendar.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node ./bin/justcalendar.js",
+    "check": "node ./bin/justcalendar.js --help"
+  },
+  "keywords": [
+    "justcalendar",
+    "calendar",
+    "google-drive",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0"
+  }
+}
