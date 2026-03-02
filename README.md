@@ -38,11 +38,14 @@ justcalendar calendars rename "Workout" "Workout Intensity"
 justcalendar calendars remove "Workout Intensity"
 justcalendar calendars select "Energy Tracker"
 justcalendar data set "Energy Tracker" 2026-03-01 green
+justcalendar data set "Energy Tracker" 2026-03-01 green 2026-03-02 yellow 2026-03-03 red
 justcalendar data set "Sleep" 2026-03-01 8
 justcalendar data set "Pills" 2026-03-01 true
 justcalendar data set "TODOs" 2026-03-01 "Buy vitamins"
 justcalendar data delete "TODOs" 2026-03-01
+justcalendar data delete "TODOs" 2026-03-01 2026-03-02 2026-03-03
 justcalendar data get "Sleep" 2026-03-01
+justcalendar data get "Sleep" 2026-03-01 2026-03-02 2026-03-03
 ```
 
 ## How auth works
@@ -52,4 +55,3 @@ justcalendar data get "Sleep" 2026-03-01
 - Backend returns a Google Drive access token.
 - CLI caches it locally until near expiry.
 - CLI then talks directly to Google Drive API for read/write/delete operations.
-

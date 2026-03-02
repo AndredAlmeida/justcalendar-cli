@@ -1318,22 +1318,50 @@ async function runCalendarsSelectCommand(selector) {
   console.log(`Selected calendar \"${targetCalendar.name}\" (id=${targetCalendar.id}).`);
 }
 
-async function runDataSetCommand(selector, dateInput, valueInput) {
+async function runDataSetCommand(selector, rawPairs = []) {
   const cliConfig = await readCliConfig();
   requireAgentToken(cliConfig);
+
+  const pairs = Array.isArray(rawPairs) ? rawPairs : [];
+  if (pairs.length === 0) {
+    throw new Error(
+      "Missing date/value arguments. Usage: justcalendar data set <calendar> <date1> <value1> [<date2> <value2> ...]",
+    );
+  }
+  if (pairs.length % 2 !== 0) {
+    throw new Error(
+      "Date/value arguments must be provided in pairs: <date1> <value1> [<date2> <value2> ...]",
+    );
+  }
 
   const workspace = await loadWorkspace(cliConfig, { createConfigIfMissing: true });
   const { currentAccountId, currentAccount } = resolveCurrentAccount(workspace.configPayload);
   const targetCalendar = resolveCalendarFromSelector(currentAccount, selector);
-  const dateKey = parseIsoDay(dateInput);
-
   const dataFileState = await loadCalendarDataFile(cliConfig, workspace, currentAccountId, targetCalendar);
-  const parsedValue = parseDayValueForCalendar(targetCalendar, valueInput);
 
-  if (parsedValue.unset) {
-    delete dataFileState.flatData[dateKey];
-  } else {
+  const appliedUpdates = [];
+  for (let pairIndex = 0; pairIndex < pairs.length; pairIndex += 2) {
+    const dateInput = pairs[pairIndex];
+    const valueInput = pairs[pairIndex + 1];
+    const dateKey = parseIsoDay(dateInput);
+    const parsedValue = parseDayValueForCalendar(targetCalendar, valueInput);
+
+    if (parsedValue.unset) {
+      delete dataFileState.flatData[dateKey];
+      appliedUpdates.push({
+        dateKey,
+        unset: true,
+        value: null,
+      });
+      continue;
+    }
+
     dataFileState.flatData[dateKey] = parsedValue.value;
+    appliedUpdates.push({
+      dateKey,
+      unset: false,
+      value: parsedValue.value,
+    });
   }
 
   const nextPayload = {
@@ -1357,69 +1385,111 @@ async function runDataSetCommand(selector, dateInput, valueInput) {
     await saveWorkspaceConfig(cliConfig, workspace);
   }
 
-  if (parsedValue.unset) {
-    console.log(`Cleared ${dateKey} for calendar \"${targetCalendar.name}\".`);
-  } else {
-    console.log(`Set ${dateKey}=${JSON.stringify(parsedValue.value)} for calendar \"${targetCalendar.name}\".`);
-  }
-}
-
-async function runDataDeleteCommand(selector, dateInput) {
-  const cliConfig = await readCliConfig();
-  requireAgentToken(cliConfig);
-
-  const workspace = await loadWorkspace(cliConfig, { createConfigIfMissing: true });
-  const { currentAccountId, currentAccount } = resolveCurrentAccount(workspace.configPayload);
-  const targetCalendar = resolveCalendarFromSelector(currentAccount, selector);
-  const dateKey = parseIsoDay(dateInput);
-
-  const dataFileState = await loadCalendarDataFile(cliConfig, workspace, currentAccountId, targetCalendar);
-  delete dataFileState.flatData[dateKey];
-
-  const nextPayload = {
-    version: 1,
-    "account-id": currentAccountId,
-    "calendar-id": targetCalendar.id,
-    "calendar-type": normalizeCalendarType(targetCalendar.type, "check"),
-    data: toNestedDayData(dataFileState.flatData),
-  };
-
-  const writeResult = await upsertDriveJsonFileByName(cliConfig, {
-    folderId: workspace.folderId,
-    fileName: dataFileState.fileName,
-    payload: nextPayload,
-    fileId: dataFileState.fileId,
-  });
-
-  targetCalendar["data-file"] = dataFileState.fileName;
-  targetCalendar["data-file-id"] = writeResult.fileId;
-  if (dataFileState.configNeedsSave) {
-    await saveWorkspaceConfig(cliConfig, workspace);
-  }
-
-  console.log(`Deleted day value ${dateKey} from calendar \"${targetCalendar.name}\".`);
-}
-
-async function runDataGetCommand(selector, dateInput) {
-  const cliConfig = await readCliConfig();
-  requireAgentToken(cliConfig);
-
-  const workspace = await loadWorkspace(cliConfig, { createConfigIfMissing: true });
-  const { currentAccountId, currentAccount } = resolveCurrentAccount(workspace.configPayload);
-  const targetCalendar = resolveCalendarFromSelector(currentAccount, selector);
-  const dateKey = parseIsoDay(dateInput);
-
-  const dataFileState = await loadCalendarDataFile(cliConfig, workspace, currentAccountId, targetCalendar);
-  const value = Object.prototype.hasOwnProperty.call(dataFileState.flatData, dateKey)
-    ? dataFileState.flatData[dateKey]
-    : null;
-
-  if (value === null) {
-    console.log(`${targetCalendar.name} ${dateKey}: <empty>`);
+  if (appliedUpdates.length === 1) {
+    const [singleUpdate] = appliedUpdates;
+    if (singleUpdate.unset) {
+      console.log(`Cleared ${singleUpdate.dateKey} for calendar \"${targetCalendar.name}\".`);
+    } else {
+      console.log(
+        `Set ${singleUpdate.dateKey}=${JSON.stringify(singleUpdate.value)} for calendar \"${targetCalendar.name}\".`,
+      );
+    }
     return;
   }
 
-  console.log(`${targetCalendar.name} ${dateKey}: ${JSON.stringify(value)}`);
+  console.log(`Updated ${appliedUpdates.length} day values for calendar \"${targetCalendar.name}\":`);
+  for (const updateItem of appliedUpdates) {
+    if (updateItem.unset) {
+      console.log(`- cleared ${updateItem.dateKey}`);
+    } else {
+      console.log(`- set ${updateItem.dateKey}=${JSON.stringify(updateItem.value)}`);
+    }
+  }
+}
+
+async function runDataDeleteCommand(selector, rawDates = []) {
+  const cliConfig = await readCliConfig();
+  requireAgentToken(cliConfig);
+
+  const dates = Array.isArray(rawDates) ? rawDates : [];
+  if (dates.length === 0) {
+    throw new Error(
+      "Missing dates. Usage: justcalendar data delete <calendar> <date1> [<date2> <date3> ...]",
+    );
+  }
+
+  const workspace = await loadWorkspace(cliConfig, { createConfigIfMissing: true });
+  const { currentAccountId, currentAccount } = resolveCurrentAccount(workspace.configPayload);
+  const targetCalendar = resolveCalendarFromSelector(currentAccount, selector);
+
+  const dataFileState = await loadCalendarDataFile(cliConfig, workspace, currentAccountId, targetCalendar);
+  const deletedDateKeys = [];
+  for (const dateInput of dates) {
+    const dateKey = parseIsoDay(dateInput);
+    delete dataFileState.flatData[dateKey];
+    deletedDateKeys.push(dateKey);
+  }
+
+  const nextPayload = {
+    version: 1,
+    "account-id": currentAccountId,
+    "calendar-id": targetCalendar.id,
+    "calendar-type": normalizeCalendarType(targetCalendar.type, "check"),
+    data: toNestedDayData(dataFileState.flatData),
+  };
+
+  const writeResult = await upsertDriveJsonFileByName(cliConfig, {
+    folderId: workspace.folderId,
+    fileName: dataFileState.fileName,
+    payload: nextPayload,
+    fileId: dataFileState.fileId,
+  });
+
+  targetCalendar["data-file"] = dataFileState.fileName;
+  targetCalendar["data-file-id"] = writeResult.fileId;
+  if (dataFileState.configNeedsSave) {
+    await saveWorkspaceConfig(cliConfig, workspace);
+  }
+
+  if (deletedDateKeys.length === 1) {
+    console.log(`Deleted day value ${deletedDateKeys[0]} from calendar \"${targetCalendar.name}\".`);
+    return;
+  }
+
+  console.log(`Deleted ${deletedDateKeys.length} day values from calendar \"${targetCalendar.name}\":`);
+  for (const dateKey of deletedDateKeys) {
+    console.log(`- ${dateKey}`);
+  }
+}
+
+async function runDataGetCommand(selector, rawDates = []) {
+  const cliConfig = await readCliConfig();
+  requireAgentToken(cliConfig);
+
+  const dates = Array.isArray(rawDates) ? rawDates : [];
+  if (dates.length === 0) {
+    throw new Error(
+      "Missing dates. Usage: justcalendar data get <calendar> <date1> [<date2> <date3> ...]",
+    );
+  }
+
+  const workspace = await loadWorkspace(cliConfig, { createConfigIfMissing: true });
+  const { currentAccountId, currentAccount } = resolveCurrentAccount(workspace.configPayload);
+  const targetCalendar = resolveCalendarFromSelector(currentAccount, selector);
+
+  const dataFileState = await loadCalendarDataFile(cliConfig, workspace, currentAccountId, targetCalendar);
+  const normalizedDateKeys = dates.map((dateInput) => parseIsoDay(dateInput));
+  for (const dateKey of normalizedDateKeys) {
+    const value = Object.prototype.hasOwnProperty.call(dataFileState.flatData, dateKey)
+      ? dataFileState.flatData[dateKey]
+      : null;
+
+    if (value === null) {
+      console.log(`${targetCalendar.name} ${dateKey}: <empty>`);
+      continue;
+    }
+    console.log(`${targetCalendar.name} ${dateKey}: ${JSON.stringify(value)}`);
+  }
 }
 
 function printFatalErrorAndExit(error) {
@@ -1535,33 +1605,35 @@ export async function runCli(argv = process.argv) {
   const data = program.command("data").description("Manage day data values");
 
   data
-    .command("set <calendar> <date> <value>")
-    .description("Set a day value. Date format: YYYY-MM-DD")
-    .action(async (calendar, date, value) => {
+    .command("set <calendar> [pairs...]")
+    .description(
+      "Set one or more day values. Usage: set <calendar> <date1> <value1> [<date2> <value2> ...]",
+    )
+    .action(async (calendar, pairs) => {
       try {
-        await runDataSetCommand(calendar, date, value);
+        await runDataSetCommand(calendar, pairs);
       } catch (error) {
         printFatalErrorAndExit(error);
       }
     });
 
   data
-    .command("delete <calendar> <date>")
-    .description("Delete/clear a day value. Date format: YYYY-MM-DD")
-    .action(async (calendar, date) => {
+    .command("delete <calendar> [dates...]")
+    .description("Delete/clear one or more day values. Usage: delete <calendar> <date1> [<date2> ...]")
+    .action(async (calendar, dates) => {
       try {
-        await runDataDeleteCommand(calendar, date);
+        await runDataDeleteCommand(calendar, dates);
       } catch (error) {
         printFatalErrorAndExit(error);
       }
     });
 
   data
-    .command("get <calendar> <date>")
-    .description("Read a day value. Date format: YYYY-MM-DD")
-    .action(async (calendar, date) => {
+    .command("get <calendar> [dates...]")
+    .description("Read one or more day values. Usage: get <calendar> <date1> [<date2> ...]")
+    .action(async (calendar, dates) => {
       try {
-        await runDataGetCommand(calendar, date);
+        await runDataGetCommand(calendar, dates);
       } catch (error) {
         printFatalErrorAndExit(error);
       }
