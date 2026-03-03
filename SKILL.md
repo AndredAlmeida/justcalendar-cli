@@ -1,5 +1,5 @@
 ---
-name: justcalendar-cli
+name: justcalendar
 description: Use this skill when a user needs to install, authenticate, or operate the Just Calendar CLI against https://justcalendar.ai, including generating an agent token in the web UI and performing calendar/day-data management from terminal commands.
 ---
 
@@ -7,7 +7,7 @@ description: Use this skill when a user needs to install, authenticate, or opera
 
 ## Purpose
 
-This skill provides complete operational guidance for `justcalendar-cli`, a Node.js CLI that manages Just Calendar data in Google Drive through:
+This skill provides complete operational guidance for `justcalendar`, a Node.js CLI that manages Just Calendar data in Google Drive through:
 
 1. Backend-issued Google Drive access tokens from `https://justcalendar.ai`
 2. Direct Google Drive API reads/writes for calendar data files
@@ -18,7 +18,7 @@ Use this skill for setup, login, troubleshooting, and day-to-day CLI operations.
 
 Use this skill when user asks to:
 
-- Install or update `justcalendar-cli`
+- Install or update `justcalendar`
 - Login with a token generated in Just Calendar web interface
 - Add, list, rename, remove, or select calendars
 - Set/get/delete day values from calendars
@@ -175,6 +175,61 @@ Bulk get (multiple dates in one call):
 ```bash
 justcalendar data get "Sleep" 2026-03-01 2026-03-02 2026-03-03
 ```
+
+## Bulk-First Rule (Multi-Day Operations)
+
+When handling more than one date, prefer **one bulk command** over looping per-day commands.
+
+Use these bulk patterns by default:
+
+- `justcalendar data set <calendar> <date1> <value1> <date2> <value2> ...`
+- `justcalendar data delete <calendar> <date1> <date2> ...`
+- `justcalendar data get <calendar> <date1> <date2> ...`
+
+Use bulk whenever request scope is more than one day, including:
+
+- Date ranges
+- Whole week or whole month operations
+- Backfills
+- Batch fixes
+
+Fall back to per-day commands only when:
+
+- Bulk command length would exceed shell/OS command length limits
+- Per-day retries are required for a failed subset
+
+Single-day requests stay unchanged: use the existing single-date command forms.
+
+### Bulk Examples
+
+Week update in one `data set` call:
+
+```bash
+justcalendar data set "Energy Tracker" \
+  2026-03-02 green 2026-03-03 yellow 2026-03-04 red \
+  2026-03-05 green 2026-03-06 green 2026-03-07 yellow 2026-03-08 green
+```
+
+Month delete in one `data delete` call:
+
+```bash
+justcalendar data delete "TODOs" \
+  2026-02-01 2026-02-02 2026-02-03 2026-02-04 2026-02-05 2026-02-06 2026-02-07 \
+  2026-02-08 2026-02-09 2026-02-10 2026-02-11 2026-02-12 2026-02-13 2026-02-14 \
+  2026-02-15 2026-02-16 2026-02-17 2026-02-18 2026-02-19 2026-02-20 2026-02-21 \
+  2026-02-22 2026-02-23 2026-02-24 2026-02-25 2026-02-26 2026-02-27 2026-02-28
+```
+
+Multi-day verification in one `data get` call:
+
+```bash
+justcalendar data get "Sleep" \
+  2026-03-01 2026-03-02 2026-03-03 2026-03-04 2026-03-05 2026-03-06 2026-03-07
+```
+
+Performance + consistency note:
+
+- Bulk commands reduce CLI/API overhead and reduce partial-write risk versus many per-day calls.
 
 ## Value Rules By Calendar Type
 
