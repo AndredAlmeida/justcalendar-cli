@@ -34,6 +34,13 @@ Use this skill when user asks to:
 
 ## Installation
 
+Global install from npm:
+
+```bash
+npm install -g justcalendar
+justcalendar --help
+```
+
 From local project path:
 
 ```bash
