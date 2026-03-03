@@ -1,5 +1,5 @@
 {
-  "name": "justcalendar-cli",
+  "name": "justcalendar",
   "version": "0.1.0",
   "description": "CLI for managing Just Calendar data on Google Drive",
   "type": "module",
